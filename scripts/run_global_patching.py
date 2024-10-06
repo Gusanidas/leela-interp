@@ -1,3 +1,4 @@
+import time
 import argparse
 import itertools
 import pickle
@@ -23,7 +24,7 @@ def main(args):
     save_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        with open(base_dir / "interesting_puzzles.pkl", "rb") as f:
+        with open(base_dir / "puzzles_with_move_trees.pkl", "rb") as f:
             puzzles = pickle.load(f)
     except FileNotFoundError:
         raise ValueError("Corrupted puzzles not found, run make_corruptions.py first")
@@ -58,13 +59,15 @@ def main(args):
 
 
 if __name__ == "__main__":
+    t0 = time.time()
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", default="cuda", type=str)
-    parser.add_argument("--batch_size", default=128, type=int)
-    parser.add_argument("--base_dir", default=".", type=str)
+    parser.add_argument("--device", default="mps", type=str)
+    parser.add_argument("--batch_size", default=96, type=int)
+    parser.add_argument("--base_dir", default="..", type=str)
     parser.add_argument("--n_puzzles", default=0, type=int)
     parser.add_argument("--num_threads", default=1, type=int)
     parser.add_argument("--residual_stream", action="store_true")
     parser.add_argument("--attention", action="store_true")
     args = parser.parse_args()
     main(args)
+    print(f"Finished in {time.time() - t0:.2f} seconds")
