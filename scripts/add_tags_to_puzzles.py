@@ -72,7 +72,7 @@ for i, (idx, puzzle) in enumerate(puzzles.iterrows()):
         return 0.0
 
     effects_00000_tgt.append((idx, process_effects(squares_00000_tgt, patching_squares, candidate_squares, squares_000_tgt)))
-    effects_000_tgt.append((idx, process_effects(squares_000_tgt, patching_squares, candidate_squares, squares_000_tgt)))
+    effects_000_tgt.append((idx, process_effects(squares_000_tgt, patching_squares, candidate_squares, squares_000_tgt, is_000=True)))
     effects_001_tgt.append((idx, process_effects(squares_001_tgt, patching_squares, candidate_squares, squares_000_tgt)))
     effects_010_tgt.append((idx, process_effects(squares_010_tgt, patching_squares, candidate_squares, squares_000_tgt)))
     effects_00_tgt.append((idx, process_effects(squares_00_tgt, patching_squares, candidate_squares, squares_000_tgt)))

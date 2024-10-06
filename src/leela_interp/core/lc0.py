@@ -1,7 +1,8 @@
 import contextlib
 import functools
 import os
-from typing import Callable
+from typing import Callable, Optional
+from collections import OrderedDict
 
 import chess
 import numpy as np
@@ -299,15 +300,29 @@ class Lc0Model(torch.nn.Module):
         }
 
     def top_moves(
-        self, board: LeelaBoard, policy: torch.Tensor, top_k: int | None = 1
-    ) -> dict[str, float]:
+        self, board: LeelaBoard, policy: torch.Tensor, top_k: Optional[int] = 1
+    ) -> OrderedDict[str, float]:
         assert policy.shape == (self.POLICY_OUTPUT_SIZE,)
         legal_indices, legal_uci = self.legal_moves(board)
+
         if top_k is None:
             top_k = len(legal_indices)
         assert top_k > 0
-        top_k_indices = torch.argsort(policy[legal_indices])[-top_k:].flip(0)
-        return {legal_uci[i]: policy[legal_indices[i]].item() for i in top_k_indices}
+
+        # Get the policy values for legal moves
+        legal_policy = policy[legal_indices]
+
+        # Sort the legal moves by their policy values (in descending order)
+        sorted_indices = torch.argsort(legal_policy, descending=True)
+
+        # Create an OrderedDict with the top k moves
+        top_moves = OrderedDict()
+        for i in sorted_indices[:top_k]:
+            move_uci = legal_uci[i]
+            move_probability = legal_policy[i].item()
+            top_moves[move_uci] = move_probability
+
+        return top_moves
 
     @property
     def model(self):

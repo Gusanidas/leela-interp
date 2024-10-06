@@ -13,4 +13,4 @@ from .core.leela_board import LeelaBoard
 from .core.nnsight import Lc0sight
 from .tools import patching
 from .tools.activations import ActivationCache
-from .tools.play import get_lc0_pv_probabilities
+from .tools.play import get_lc0_pv_probabilities, get_lc0_pv_probabilities_tree

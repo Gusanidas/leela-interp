@@ -5,9 +5,12 @@ don't have batch support yet.
 """
 
 import pandas as pd
+from collections import deque
 import torch
 import tqdm
 from leela_interp import Lc0Model, LeelaBoard
+
+DEFAULT_WANTED_PATHS = ["0", "00", "000", "0000", "00000", "001", "010", "002", "020", "01", "02", "1", "10", "100", "1000", "10000", "101", "2", "20", "200"]
 
 
 def get_lc0_pv_probabilities(
@@ -104,3 +107,71 @@ def get_lc0_pv_probabilities_non_batched(puzzle):
         board.push_uci(move)
 
     return probs
+
+def get_lc0_pv_probabilities_tree(
+    model: Lc0Model,
+    puzzles: pd.DataFrame,
+    batch_size: int = 100,
+    pbar: bool | None = None,
+) -> tuple[pd.Series, pd.Series]:
+    """Computes Lc0's probability tree for the top 2 moves at each position.
+
+    Args:
+        model: an LC0Model
+        puzzles: a dataframe of puzzles. Will be batched automatically.
+        batch_size: how many puzzles to feed into Lc0 at once.
+        pbar: whether to show a progress bar. If None, determine automatically based
+            on number of batches.
+
+    Returns:
+        A tuple of two pandas series:
+        1. A series of move trees, where each tree is a list of lists representing
+           the top 2 moves and their probabilities for 3 levels deep.
+        2. A series of WDL (win/draw/loss) scores for the initial position.
+    """
+    move_trees = []
+    if pbar is None:
+        pbar = len(puzzles) > batch_size
+
+    _range = tqdm.trange if pbar else range
+    for i in _range(0, len(puzzles), batch_size):
+        new_move_trees = _get_lc0_pv_probabilities_single_batch_tree(
+            model, puzzles.iloc[i : i + batch_size]
+        )
+        move_trees.extend(new_move_trees)
+
+    return pd.Series(move_trees, index=puzzles.index)
+    
+
+def _get_lc0_pv_probabilities_single_batch_tree(
+    model: Lc0Model,
+    puzzles: pd.DataFrame,
+    num_moves: int = 3,
+    wanted_paths = None,
+) -> tuple[list[list[float]], list[list[str]], list[list[float]]]:
+    """Single batch of get_lc0_pv_probabilities, just a helper function."""
+    if wanted_paths is None:
+        wanted_paths = DEFAULT_WANTED_PATHS
+    boards = [(LeelaBoard.from_puzzle(p)) for _, p in puzzles.iterrows()]
+    boards_and_paths = deque([(i,"", board) for i, board in enumerate(boards)])
+
+    batch_size = len(boards)
+    move_trees = [dict() for _ in range(batch_size)]
+
+    while boards_and_paths:
+        batch_boards_and_paths = [boards_and_paths.popleft() for _ in range(min(len(boards_and_paths), batch_size))]    
+        board_idxs, paths, boards = zip(*batch_boards_and_paths)
+        policies, wdl, _ = model.batch_play(boards, return_probs=True)
+        for k, (board_idx, path, board) in enumerate(batch_boards_and_paths):
+            if policies[k][0] is None:
+                continue
+            top_moves = model.top_moves(board, policies[k], top_k=num_moves)
+            for move_idx, (move, prob) in enumerate(top_moves.items()):
+                new_path = path + str(move_idx)
+                if new_path not in wanted_paths:
+                    continue
+                move_trees[board_idx][new_path] = move
+                next_board = board.copy()
+                next_board.push_uci(move)
+                boards_and_paths.append((board_idx, new_path, next_board))
+    return move_trees

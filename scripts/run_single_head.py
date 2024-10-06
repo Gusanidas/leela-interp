@@ -1,3 +1,4 @@
+import time
 import argparse
 import itertools
 import pickle
@@ -124,11 +125,11 @@ def main(args):
     base_dir = Path(args.base_dir)
     model = Lc0sight(base_dir / "lc0.onnx", device=args.device)
 
-    save_dir = base_dir / f"results/L{args.layer}H{args.head}"
+    save_dir = base_dir / f"results/move_trees/L{args.layer}H{args.head}"
     save_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        with open(base_dir / "interesting_puzzles.pkl", "rb") as f:
+        with open(base_dir / "puzzles_with_move_trees_and_tags.pkl", "rb") as f:
             puzzles = pickle.load(f)
     except FileNotFoundError:
         raise ValueError("Corrupted puzzles not found, run make_corruptions.py first")
@@ -161,8 +162,9 @@ def main(args):
 
 
 if __name__ == "__main__":
+    t0 = time.time()
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", default="cuda", type=str)
+    parser.add_argument("--device", default="mps", type=str)
     parser.add_argument("--layer", default=12, type=int)
     parser.add_argument("--head", default=12, type=int)
     parser.add_argument("--batch_size", default=128, type=int)
@@ -170,8 +172,9 @@ if __name__ == "__main__":
     parser.add_argument("--single_weight", action="store_true")
     parser.add_argument("--attention_pattern", action="store_true")
     parser.add_argument("--main", action="store_true")
-    parser.add_argument("--base_dir", default=".", type=str)
+    parser.add_argument("--base_dir", default="..", type=str)
     parser.add_argument("--n_puzzles", default=0, type=int)
     parser.add_argument("--num_threads", default=1, type=int)
     args = parser.parse_args()
     main(args)
+    print(f"Total time: {time.time() - t0:.2f}s")
