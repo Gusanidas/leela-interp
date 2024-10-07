@@ -75,24 +75,26 @@ However if we focus on ~300 puzzles where this moves have big effects in activat
 I repeat the paper probing experiments, but with other movements of the move tree.
 The probe with the main path 3rd move:
 
-![third_move](.plots/third_move_prediction.png)
+![third_move](./plots/third_move_prediction.png)
 
 
 The reconstruction error is considerably worse than with the 3erd movement, but still clearly better than the random model.
 
-![third_move_alternative](.plots/third_move_prediction_alternative.png)
+![third_move_alternative](./plots/third_move_prediction_alternative.png)
 
-![fifth_move](.plots/probe_results_fifth_move.png)
+![fifth_move](./plots/probe_results_fifth_move.png)
 
 And like in the previous experiments, when using only a subset of the puzzles where the move is relevant, the results are better.
 
-![third_move_alternative](.plots/third_move_prediction_filtered_1.png)
+![third_move_alternative](./plots/third_move_prediction_filtered_1.png)
 
 
 An interesting result, is that a probe trained on the move 100 (first turn choose second choice, then first choice two time), and the move 1 (first turn, second option). Is able to predict with some accuracy the 3rd move of the main path (move 000), from the first move.
 
-![100_on_000](.plots/100_probe_000_evaluation.png)
+![100_on_000](./plots/100_probe_000_evaluation.png)
 
+
+## Original Readme below:
 
 # Evidence of Learned Look-Ahead in a Chess-Playing Neural Network
 
