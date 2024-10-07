@@ -1,7 +1,8 @@
 import functools
 import warnings
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Literal
+import pickle
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,209 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report
 
 from leela_interp import ActivationCache, LeelaBoard
+
+
+
+def train_probe(
+    X: np.ndarray,
+    y: list[int] | np.ndarray,
+    z_squares: list[int] | np.ndarray,
+    *,
+    n_epochs,
+    lr,
+    batch_size,
+    weight_decay,
+    k,
+    device,
+):
+    """Train a bilinear probe to predict y from X and Z.
+
+    Args:
+        X: should have shape (n_boards, 64, d).
+        y: should have shape (n_boards,) and values in {0, ..., 63}.
+        z_squares: should have shape (n_boards,) and values in {0, ..., 63}.
+
+    Returns:
+        A trained bilinear probe.
+    """
+    Z = X[np.arange(len(X)), z_squares, :]
+    assert Z.shape == (len(X), 768)
+
+    dataset = ProbeData.create(X=X, y=y, Z=Z)
+    split_data = dataset.split(val_split=0)
+
+    probe = BilinearSquarePredictor()
+    probe.train(
+        split_data,
+        n_epochs=n_epochs,
+        lr=lr,
+        batch_size=batch_size,
+        weight_decay=weight_decay,
+        k=k,
+        device=device,
+        pbar=False,
+    )
+
+    return probe
+
+
+def collect_data(
+    puzzles: pd.DataFrame,
+    activations: ActivationCache,
+    activation_name: str,
+    prediction_target: Literal["target", "source"],
+    n_train: int,
+    train=True,
+):
+    ys = []
+    z_squares = []
+    if train:
+        boards = activations.boards[:n_train]
+        puzzles = puzzles.iloc[:n_train]
+    else:
+        boards = activations.boards[n_train:]
+        puzzles = puzzles.iloc[n_train:]
+
+    for board, (_, puzzle) in zip(boards, puzzles.iterrows()):
+        # Important check to make sure we're not accidentally using activations
+        # from different puzzles:
+        assert board.fen() == LeelaBoard.from_puzzle(puzzle).fen()
+        if prediction_target == "target":
+            # Predict the third move target from the first move target:
+            y = puzzle.principal_variation[2][2:4]
+            z = puzzle.principal_variation[0][2:4]
+        elif prediction_target == "source":
+            # Predict the third move source from the third move target:
+            y = puzzle.principal_variation[2][:2]
+            z = puzzle.principal_variation[2][2:4]
+        ys.append(board.sq2idx(y))
+        z_squares.append(board.sq2idx(z))
+
+    if train:
+        X = activations[activation_name][:n_train]
+    else:
+        X = activations[activation_name][n_train:]
+    assert X.shape[1:] == (64, 768), X.shape
+
+    ys = np.array(ys)
+    z_squares = np.array(z_squares)
+
+    return X, ys, z_squares
+
+
+def eval_probe(target_probe, source_probe, puzzles, activations, name, n_train, collect_data_fn):
+    X, target_y, z_squares = collect_data_fn(
+        puzzles, activations, name, "target", n_train=n_train, train=False
+    )
+    _, source_y, _ = collect_data_fn(
+        puzzles, activations, name, "source", n_train=n_train, train=False
+    )
+
+    # Predict target squares:
+    Z = X[np.arange(len(X)), z_squares, :]
+    assert Z.shape == (len(X), 768)
+    target_squares = target_probe.predict(X, Z)
+
+    # Predict source squares:
+    Z = X[np.arange(len(X)), target_squares, :]
+    assert Z.shape == (len(X), 768)
+    source_squares = source_probe.predict(X, Z)
+
+    source_accuracy = (source_squares == source_y).mean()
+    target_accuracy = (target_squares == target_y).mean()
+    accuracy = ((source_squares == source_y) * (target_squares == target_y)).mean()
+
+    return source_accuracy, target_accuracy, accuracy
+
+def eval_probe_top_k(target_probe, source_probe, puzzles, activations, name, n_train, collect_data_fn, k=3):
+    X, target_y, z_squares = collect_data_fn(
+        puzzles, activations, name, "target", n_train=n_train, train=False
+    )
+    _, source_y, _ = collect_data_fn(
+        puzzles, activations, name, "source", n_train=n_train, train=False
+    )
+
+    # Predict target squares:
+    Z = X[np.arange(len(X)), z_squares, :]
+    assert Z.shape == (len(X), 768)
+    target_squares_top_k = target_probe.predict_top_k(X, Z, k)
+
+    # Predict source squares:
+    Z = X[np.arange(len(X)), target_squares_top_k[:, 0], :]  # Use the top prediction for Z
+    assert Z.shape == (len(X), 768)
+    source_squares_top_k = source_probe.predict_top_k(X, Z, k)
+
+    source_accuracy_top_k = np.mean([source_y[i] in source_squares_top_k[i] for i in range(len(source_y))])
+    target_accuracy_top_k = np.mean([target_y[i] in target_squares_top_k[i] for i in range(len(target_y))])
+    accuracy_top_k = np.mean([(source_y[i] in source_squares_top_k[i]) and (target_y[i] in target_squares_top_k[i]) for i in range(len(source_y))])
+
+    # For compatibility, also calculate top-1 accuracy
+    source_accuracy = (source_squares_top_k[:, 0] == source_y).mean()
+    target_accuracy = (target_squares_top_k[:, 0] == target_y).mean()
+    accuracy = ((source_squares_top_k[:, 0] == source_y) & (target_squares_top_k[:, 0] == target_y)).mean()
+
+    return {
+        'source_accuracy': source_accuracy,
+        'target_accuracy': target_accuracy,
+        'accuracy': accuracy,
+        'source_accuracy_top_k': source_accuracy_top_k,
+        'target_accuracy_top_k': target_accuracy_top_k,
+        'accuracy_top_k': accuracy_top_k,
+        'k': k
+    }
+
+
+def train_probes(activations, puzzles, n_train, hparams, collect_data_fn):
+    target_probes = []
+    for layer in range(15):
+        #print(f"Layer {layer}")
+        name = f"encoder{layer}/ln2"
+        X, y, z_squares = collect_data_fn(
+            puzzles, activations, name, "target", n_train=n_train
+        )
+        probe = train_probe(X, y, z_squares, **hparams)
+        target_probes.append(probe)
+
+    source_probes = []
+    for layer in range(15):
+        #print(f"Layer {layer}")
+        name = f"encoder{layer}/ln2"
+        X, y, z_squares = collect_data_fn(
+            puzzles, activations, name, "source", n_train=n_train
+        )
+        probe = train_probe(X, y, z_squares, **hparams)
+        source_probes.append(probe)
+
+    return target_probes, source_probes
+
+
+def eval_probes(target_probes, source_probes, puzzles, activations, n_train, path, collect_data_fn):
+    accuracies = []
+    source_accuracies = []
+    target_accuracies = []
+    
+    for layer, target_probe, source_probe in zip(
+        tqdm.trange(15), target_probes, source_probes
+    ):
+        name = f"encoder{layer}/ln2"
+        source_accuracy, target_accuracy, accuracy = eval_probe(
+            target_probe, source_probe, puzzles, activations, name, n_train, collect_data_fn)
+        
+        accuracies.append(accuracy)
+        source_accuracies.append(source_accuracy)
+        target_accuracies.append(target_accuracy)
+    
+    results_dict = {
+        "accuracies": np.array(accuracies),
+        "source_accuracies": np.array(source_accuracies),
+        "target_accuracies": np.array(target_accuracies),
+    }
+    
+    if path is not None:
+        with open(path, "wb") as f:
+            pickle.dump(results_dict, f)
+    
+    return results_dict
 
 
 @dataclass
@@ -243,6 +447,10 @@ class BilinearSquarePredictor:
 
     def predict(self, X: np.ndarray, Z: np.ndarray):
         return self.predict_proba(X, Z).argmax(axis=-1)
+
+    def predict_top_k(self, X: np.ndarray, Z: np.ndarray, k: int):
+        probs = self.predict_proba(X, Z)
+        return np.argsort(probs, axis=-1)[:, -k:][:, ::-1]
 
     def train(
         self,
