@@ -4,25 +4,25 @@ In this fork, I have some work I have done on top of the original repo.
 ## Move Trees
 
 In the original paper, they focus on showing, in several ways, that the third move is encoded in the state of the network and influences the choice of the first move. To be able to study the role of other future moves, I add a field `"move_tree"` to each puzzle. The move tree is obtained by playing the top _k_ moves at each board, for some depth.
-
+```
 Start
 ├── e2e4
 │   ├── e7e5
 │   │   ├── g1f3
-│   │   │   ├── b8c6
-│   │   │   │   ├── f1b5
-│   │   ├── f1c4
+│   │   │   └── b8c6
+│   │   │       └── f1b5
+│   │   └── f1c4
 │   ├── c7c5
-│   │   ├── g1f3
+│   │   └── g1f3
 │   └── e7e6
 ├── d2d4
 │   ├── d7d5
 │   │   ├── c2c4
-│   │   ├── g1f3
-│   ├── g8f6
-│   │   ├── c2c4
+│   │   └── g1f3
+│   └── g8f6
+│       └── c2c4
 └── c2c4
-
+```
 For practical reasons only some of the paths are added to the puzzle dataframe.
 To add move trees run the script "add_move_trees_to_puzzles.py"
 
@@ -72,8 +72,26 @@ However if we focus on ~300 puzzles where this moves have big effects in activat
 
 # Probing
 
-I repeat the paper probing experiments, but with other movements of the move tree. 
+I repeat the paper probing experiments, but with other movements of the move tree.
+The probe with the main path 3rd move:
 
+![third_move](.plots/third_move_prediction.png)
+
+
+The reconstruction error is considerably worse than with the 3erd movement, but still clearly better than the random model.
+
+![third_move_alternative](.plots/third_move_prediction_alternative.png)
+
+![fifth_move](.plots/probe_results_fifth_move.png)
+
+And like in the previous experiments, when using only a subset of the puzzles where the move is relevant, the results are better.
+
+![third_move_alternative](.plots/third_move_prediction_filtered_1.png)
+
+
+An interesting result, is that a probe trained on the move 100 (first turn choose second choice, then first choice two time), and the move 1 (first turn, second option). Is able to predict with some accuracy the 3rd move of the main path (move 000), from the first move.
+
+![100_on_000](.plots/100_probe_000_evaluation.png)
 
 
 # Evidence of Learned Look-Ahead in a Chess-Playing Neural Network
