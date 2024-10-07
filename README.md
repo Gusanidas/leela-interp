@@ -72,7 +72,7 @@ However if we focus on ~300 puzzles where this moves have big effects in activat
 
 # Probing
 
-I repeat the paper probing experiments, but with other movements of the move tree.
+I repeat the paper probing experiments, but with other movements of the move tree. This probes are trained only with a some of the available puzzles.
 The probe with the main path 3rd move:
 
 ![third_move](./plots/third_move_prediction.png)
